@@ -8,10 +8,12 @@
 #include <QDebug>
 #include <QFile>
 #include <QTextStream>
+#include <QStatusBar>
+
 #include "graphe.h"
 
 
-#define version "MDM_Graphes 0.1"
+#define version "MDM_Graphes 0.2"
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -21,14 +23,15 @@ MainWindow::MainWindow(QWidget *parent)
 
     QSettings settings;
     QObject::connect(ui->actionQuitter,&QAction::triggered,this,&MainWindow::close);
-    QObject::connect(ui->actionApropos,&QAction::triggered,this,&MainWindow::aPropos);
+    QObject::connect(ui->actionApropos,&QAction::triggered,this,&MainWindow::aPropos);    
+    QObject::connect(ui->actionFormat_CSV,&QAction::triggered,this,&MainWindow::clickOnFormatCSV);
+    QObject::connect(ui->actionHowTo,&QAction::triggered,this,&MainWindow::clickOnHowTo);
     QObject::connect(ui->tb_Parcourir,&QToolButton::clicked,this,&MainWindow::clickOnParcourir);
     QObject::connect(ui->btn_Load,&QPushButton::clicked,this,&MainWindow::clickOnLoad);
     QObject::connect(ui->btn_AddY,&QPushButton::clicked,this,&MainWindow::clickOnAddY);
     QObject::connect(ui->btn_RmY,&QPushButton::clicked,this,&MainWindow::clickOnRmY);
     QObject::connect(ui->btn_RazY,&QPushButton::clicked,this,&MainWindow::clickOnRazY);
     QObject::connect(ui->btn_Grf,&QPushButton::clicked,this,&MainWindow::clickOnGrf);
-
     QObject::connect(ui->lv_Yaxis,&QListView::clicked,this,&MainWindow::clickOnYList);
 
     this->setGeometry(settings.value("geometry",this->geometry()).toRect());
@@ -59,11 +62,38 @@ void MainWindow::closeEvent(QCloseEvent *event)
     settings.setValue("geometry",this->geometry());
 }
 
+
+
 void MainWindow::aPropos()
 {
     QString sText=QString("%1\nUtilitaire d'affichage des données CSV extraites du MDM500\n\nSources: https://github.com/MaximeGeay/MDM_Graphes\n"
                           "Développé avec Qt 5.14.1\nMaxime Geay\nDécembre 2023").arg(version);
     QMessageBox::information(this,"Informations",sText);
+}
+
+void MainWindow::clickOnFormatCSV()
+{
+    QString sText=QString("Pour être lisible, le fichier CSV doit avoir les caractéristiques suivantes:\n"
+                          "Le séparateur de colonnes doit être la ','\n"
+                          "Le séparateur de lignes doit être le 'RC'\n"
+                          "La première ligne doit contenir les en-têtes de colonnes.\n"
+                          "La première colonne doit être le timestamp au format : aaaa-MM-jj hh:mm:ss").arg(version);
+    QMessageBox::information(this,"Informations: Caractéristiques CSV",sText);
+}
+
+void MainWindow::clickOnHowTo()
+{
+    QString sText=QString("- Exporter un fichier CSV depuis MDM_Export\n"
+                          "- Sélectionner le fichier à l'aide du bouton '...'\n"
+                          "- Charger le fichier sélectionné en cliquant sur le bouton 'Charger'\n"
+                          "- Dans la liste de données disponibles, sélectionner la série souhaitée et l'ajouter à la liste des données à afficher"
+                          "en cliquant sur le bouton '-->'\n"
+                          "On peut ajouter autant de série de données que l'on souhaite mais le traitement sera plus long"
+                          "- Si on souhaite retirer une série de la liste à afficher, il suffit de la sélectionner puis de cliquer sur le bouton '<--'\n"
+                          "- Pour générer le graphe, il suffit de cliquer sur le bouton 'Graphe'.\n"
+                          "Le temps de traitement peut être long suivant la taille du fichier et le nombre de séries sélectionnées.\n"
+                          "On peut créer autant de graphes que l'on souhaite").arg(version);
+    QMessageBox::information(this,"Informations: Manuel utilisateur",sText);
 }
 
 void MainWindow::clickOnParcourir()
@@ -111,9 +141,11 @@ void MainWindow::clickOnLoad()
                 QSettings settings;
                 settings.setValue("FilePath",mFilePath);
                 fichier.close();
+
             }
 
         }
+
 
 }
 
@@ -159,12 +191,13 @@ void MainWindow::clickOnYList()
     {
         QString sCurrentCol=it.next();
         nCol=mEntetes.indexOf(sCurrentCol);
-        qDebug()<<nCol;
     }
 }
 
 void MainWindow::clickOnGrf()
 {
+
+    this->setCursor(Qt::WaitCursor);
     QList<QVector<double>> TabData;
     QVector<QDateTime> TabDate;
     QStringList listSeries;
@@ -181,11 +214,14 @@ void MainWindow::clickOnGrf()
             QFile fichier(fileName);
             if(fichier.open(QIODevice::ReadOnly))
             {
+
                 QTextStream flux(&fichier);
+
                 int n=0;
                  bool bFirst=true;
-                while(!flux.atEnd())
-                {   sUneLigne=flux.readLine();
+                while(!flux.atEnd())                   
+                {
+                    sUneLigne=flux.readLine();
                     if(n>0)
                     {
                     //2023-11-16 05:04:01
@@ -226,6 +262,8 @@ void MainWindow::clickOnGrf()
                     }
                     n++;
                 }
+
+
                 fichier.close();
             }
 
@@ -233,6 +271,7 @@ void MainWindow::clickOnGrf()
         }
         if(bValid)
         {
+
             Graphe * grf=new Graphe;
 
             grf->initGraphe(TabDate.first(),TabDate.last(),qRound(dMin)-1,qRound(dMax)+1,listSeries);
@@ -240,12 +279,20 @@ void MainWindow::clickOnGrf()
 
             grf->show();
             grf->replot();
+
+
+
         }
 
 
 
-
+        this->setCursor(Qt::ArrowCursor);
 }
+
+
+
+
+
 
 
 

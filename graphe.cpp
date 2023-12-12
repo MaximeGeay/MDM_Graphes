@@ -1,5 +1,7 @@
 #include "graphe.h"
 #include "ui_graphe.h"
+#include <QtConcurrent>
+#include <QStandardPaths>
 
 Graphe::Graphe(QWidget *parent) :
     QWidget(parent),
@@ -11,6 +13,7 @@ Graphe::Graphe(QWidget *parent) :
     mIsInit=false;
     QSettings settings;
     this->setGeometry(settings.value("grfGeometry",this->geometry()).toRect());
+    mImagesPath=settings.value("ImagesPath","").toString();
 
 }
 
@@ -26,23 +29,100 @@ void Graphe::closeEvent(QCloseEvent *event)
 }
 
 
+void Graphe::initGraphe(QDateTime dtDebut, QDateTime dtFin, int nMin, int nMax, QStringList listSeries)
+{
+
+    mRangeMin=nMin;
+    mRangeMax=nMax;
+    QList<QColor> ColorList;
+    ColorList.append(Qt::blue);
+    ColorList.append(Qt::red);
+    ColorList.append(Qt::green);
+    ColorList.append(Qt::black);
+    ColorList.append(Qt::magenta);
+    ColorList.append(Qt::yellow);
+    ColorList.append(Qt::cyan);
+
+    QStringListIterator it(listSeries);
+    int c=0;
+    while (it.hasNext())
+    {
+        stSerie uneSerie;
+        uneSerie.label=it.next();
+        uneSerie.courbe=new QCPCurve(ui->GRF->xAxis, ui->GRF->yAxis);
+        if(c>6)
+            c=0;
+        uneSerie.couleur=ColorList.at(c);
+        QPen pen;
+        pen.setWidth(2);
+        pen.setColor(uneSerie.couleur);
+        uneSerie.courbe->setPen(pen);
+        uneSerie.courbe->setName(uneSerie.label);
+
+        mListSerie.append(uneSerie);
+        c++;
+    }
+
+
+    this->setWindowTitle(mListSerie.first().label);
+
+    ui->GRF->setInteractions(QCP::iRangeDrag|QCP::iRangeZoom|QCP::iSelectPlottables);
+    ui->GRF->setSelectionTolerance(20);
+
+    ui->GRF->axisRect()->setRangeZoom(Qt::Vertical);
+
+    ui->GRF->axisRect()->setRangeZoomAxes(ui->GRF->xAxis,ui->GRF->yAxis);
+    ui->GRF->axisRect()->setRangeDragAxes(ui->GRF->xAxis,ui->GRF->yAxis);
+
+    setY(mRangeMin,mRangeMax);
+
+    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
+    dateTicker->setDateTimeSpec(Qt::TimeSpec::UTC);
+    dateTicker->setDateTimeFormat("HH:mm:ss");
+    ui->GRF->xAxis->setTicker(dateTicker);
+
+    ui->GRF->xAxis->setLabel("Heure UTC");
+    ui->GRF->yAxis->setLabel(mListSerie.first().label);
+    ui->GRF->legend->setVisible(true);
+
+    setX(dtDebut,dtFin);
+
+    LabelInfo->setPositionAlignment(Qt::AlignHCenter|Qt::AlignTop);
+    LabelInfo->position->setType(QCPItemPosition::ptPlotCoords);
+    LabelInfo->setVisible(false);
+
+    QObject::connect(ui->GRF,SIGNAL(plottableDoubleClick(QCPAbstractPlottable*,int,QMouseEvent*)),this,SLOT(AfficheLabelInfo(QCPAbstractPlottable*,int)));
+
+    QObject::connect(ui->btn_RazYAxis,&QPushButton::clicked,this,&Graphe::razEchelle);
+    QObject::connect(ui->GRF,&QCustomPlot::mouseWheel,this,&Graphe::gestionBorneZoom);
+    QObject::connect(ui->dtDebut,&QDateTimeEdit::dateTimeChanged,this,&Graphe::dateTimeDebutHasChanged);
+    QObject::connect(ui->dtFin,&QDateTimeEdit::dateTimeChanged,this,&Graphe::dateTimeFinHasChanged);
+    QObject::connect(ui->btn_PrintScreen,&QPushButton::clicked,this,&Graphe::clickOnPrintscreen);
+    mIsInit=true;
+
+}
+
+
+
 void Graphe::setData(QVector<QDateTime> TabDate, QList<QVector<double> > TabData)
 {
     QList<QVector <double>> TabDataList;
     QVector<double> vdTabDate;
-
-    vdTabDate=convertDateToDouble(TabDate);
-    QVector<double>unVecData;
-    TabDataList=convertRowToCol(TabData);
+    QFuture<QVector<double>> futureDate = QtConcurrent::run(this,&Graphe::convertDateToDouble,TabDate);
 
 
+    QFuture<QList<QVector <double>>> futureData = QtConcurrent::run(this,&Graphe::convertRowToCol,TabData);
+
+
+    vdTabDate=futureDate.result();
+    TabDataList=futureData.result();
+     QVector<double>unVecData;
     if(TabDataList.size()==mListSerie.size())
     {
         int n=0;
-
         QListIterator<QVector<double>>it(TabDataList);
         while(it.hasNext())
-        {
+        {           
             unVecData=it.next();
             mListSerie[n].courbe->setData(vdTabDate,unVecData);
             n++;
@@ -126,12 +206,54 @@ void Graphe::razEchelle()
     }
 }
 
+void Graphe::clickOnPrintscreen()
+{
+    QString dirPath;
+    bool bSuccess=false;
+    if(mImagesPath.isEmpty())
+        dirPath=QStandardPaths::standardLocations(QStandardPaths::PicturesLocation).first();
+    else
+        dirPath=mImagesPath;
+
+    QString fileName=QString("%1/%2.png").arg(dirPath).arg(this->windowTitle());
+    qDebug()<<dirPath;
+    qDebug()<<mImagesPath;
+    fileName = QFileDialog::getSaveFileName(this,tr("Enregistrer le Snapshot"),fileName, tr("Images (*.png *.jpg *bmp *pdf);;Images(*.png);;Images(*.jpg);;Images(*.bmp);;Document(*.pdf)"));
+    if(!fileName.isNull())
+    {
+       if(fileName.section("/",-1).endsWith(".png",Qt::CaseInsensitive))
+           bSuccess=ui->GRF->savePng(fileName);
+       if(fileName.section("/",-1).endsWith(".jpg",Qt::CaseInsensitive))
+           bSuccess=ui->GRF->saveJpg(fileName);
+       if(fileName.section("/",-1).endsWith(".bmp",Qt::CaseInsensitive))
+           bSuccess=ui->GRF->saveBmp(fileName);
+       if(fileName.section("/",-1).endsWith(".pdf",Qt::CaseInsensitive))
+           bSuccess=ui->GRF->savePdf(fileName);
+
+       if(bSuccess)
+       {
+           mImagesPath=fileName.section("/",0,fileName.count("/")-1);
+           QSettings settings;
+           settings.setValue("ImagesPath",mImagesPath);
+
+           QDesktopServices::openUrl(mImagesPath);
+       }
+
+    }
+
+}
+
+
 QVector<double> Graphe::convertDateToDouble(QVector<QDateTime> TabDate)
 {
     QVector<double>TabNum;
+    int n=0;
     QVectorIterator<QDateTime> it(TabDate);
     while(it.hasNext())
+    {
         TabNum.append(it.next().toTime_t());
+        n++;
+    }
 
     return TabNum;
 }
@@ -160,6 +282,7 @@ QList<QVector<double> > Graphe::convertRowToCol(QList<QVector<double> > TabIn)
         int n=0;
         while(it.hasNext())
         {
+
             uneLigneIn=it.next();
             uneLigneOut[n]=uneLigneIn[i];
             TabOut[i]=uneLigneOut;
@@ -173,81 +296,6 @@ QList<QVector<double> > Graphe::convertRowToCol(QList<QVector<double> > TabIn)
 
 }
 
-
-
-void Graphe::initGraphe(QDateTime dtDebut, QDateTime dtFin, int nMin, int nMax, QStringList listSeries)
-{
-
-    mRangeMin=nMin;
-    mRangeMax=nMax;
-    QList<QColor> ColorList;
-    ColorList.append(Qt::blue);
-    ColorList.append(Qt::red);
-    ColorList.append(Qt::green);
-    ColorList.append(Qt::black);
-    ColorList.append(Qt::magenta);
-    ColorList.append(Qt::yellow);
-    ColorList.append(Qt::cyan);
-
-    QStringListIterator it(listSeries);
-    int c=0;
-    while (it.hasNext())
-    {
-        stSerie uneSerie;
-        uneSerie.label=it.next();
-        uneSerie.courbe=new QCPCurve(ui->GRF->xAxis, ui->GRF->yAxis);
-        if(c>6)
-            c=0;
-        uneSerie.couleur=ColorList.at(c);
-        QPen pen;
-        pen.setWidth(2);
-        pen.setColor(uneSerie.couleur);
-        uneSerie.courbe->setPen(pen);
-        uneSerie.courbe->setName(uneSerie.label);
-
-        mListSerie.append(uneSerie);
-        c++;
-    }
-
-
-
-
-    this->setWindowTitle(mListSerie.first().label);
-
-    ui->GRF->setInteractions(QCP::iRangeDrag|QCP::iRangeZoom|QCP::iSelectPlottables);
-    ui->GRF->setSelectionTolerance(20);
-
-    ui->GRF->axisRect()->setRangeZoom(Qt::Vertical);
-
-    ui->GRF->axisRect()->setRangeZoomAxes(ui->GRF->xAxis,ui->GRF->yAxis);
-    ui->GRF->axisRect()->setRangeDragAxes(ui->GRF->xAxis,ui->GRF->yAxis);
-
-    setY(mRangeMin,mRangeMax);
-
-    QSharedPointer<QCPAxisTickerDateTime> dateTicker(new QCPAxisTickerDateTime);
-    dateTicker->setDateTimeSpec(Qt::TimeSpec::UTC);
-    dateTicker->setDateTimeFormat("HH:mm:ss");
-    ui->GRF->xAxis->setTicker(dateTicker);
-
-    ui->GRF->xAxis->setLabel("Heure UTC");
-    ui->GRF->yAxis->setLabel(mListSerie.first().label);
-    ui->GRF->legend->setVisible(true);
-
-    setX(dtDebut,dtFin);
-
-    LabelInfo->setPositionAlignment(Qt::AlignHCenter|Qt::AlignTop);
-    LabelInfo->position->setType(QCPItemPosition::ptPlotCoords);
-    LabelInfo->setVisible(false);
-
-    QObject::connect(ui->GRF,SIGNAL(plottableDoubleClick(QCPAbstractPlottable*,int,QMouseEvent*)),this,SLOT(AfficheLabelInfo(QCPAbstractPlottable*,int)));
-
-    QObject::connect(ui->btn_RazYAxis,&QPushButton::clicked,this,&Graphe::razEchelle);
-    QObject::connect(ui->GRF,&QCustomPlot::mouseWheel,this,&Graphe::gestionBorneZoom);
-    QObject::connect(ui->dtDebut,&QDateTimeEdit::dateTimeChanged,this,&Graphe::dateTimeDebutHasChanged);
-    QObject::connect(ui->dtFin,&QDateTimeEdit::dateTimeChanged,this,&Graphe::dateTimeFinHasChanged);
-    mIsInit=true;
-
-}
 
 void Graphe::setY(int nMin, int nMax)
 {

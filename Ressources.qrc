@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
         <file>IconGraphe.ico</file>
+        <file>AppareilPhoto.ico</file>
     </qresource>
 </RCC>

@@ -18,8 +18,12 @@ public:
 protected:
     void closeEvent(QCloseEvent *event) override;
 
+
+
 private slots:
     void aPropos();
+    void clickOnFormatCSV();
+    void clickOnHowTo();
     void clickOnParcourir();
     void clickOnLoad();
     void clickOnAddY();
@@ -27,7 +31,6 @@ private slots:
     void clickOnRazY();
     void clickOnYList();
     void clickOnGrf();
-
 
 private:
     Ui::MainWindow *ui;

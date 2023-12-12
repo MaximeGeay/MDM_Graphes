@@ -49,6 +49,7 @@ private slots:
     void dateTimeFinHasChanged(QDateTime uneDT);
     void dateTimeHasChanged();
     void razEchelle();
+    void clickOnPrintscreen();
 
 private:
     Ui::Graphe *ui;
@@ -62,6 +63,7 @@ private:
     int mRangeMax;
     QCPItemText *LabelInfo;
     bool mIsInit;
+    QString mImagesPath;
 };
 
 #endif // GRAPHE_H
