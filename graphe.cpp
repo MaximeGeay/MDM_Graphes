@@ -22,11 +22,12 @@ Graphe::~Graphe()
     delete ui;
 }
 
-void Graphe::closeEvent(QCloseEvent *event)
+void Graphe::resizeEvent(QResizeEvent *event)
 {
     QSettings settings;
     settings.setValue("grfGeometry",this->geometry());
 }
+
 
 
 void Graphe::initGraphe(QDateTime dtDebut, QDateTime dtFin, int nMin, int nMax, QStringList listSeries)
@@ -98,6 +99,7 @@ void Graphe::initGraphe(QDateTime dtDebut, QDateTime dtFin, int nMin, int nMax, 
     QObject::connect(ui->dtDebut,&QDateTimeEdit::dateTimeChanged,this,&Graphe::dateTimeDebutHasChanged);
     QObject::connect(ui->dtFin,&QDateTimeEdit::dateTimeChanged,this,&Graphe::dateTimeFinHasChanged);
     QObject::connect(ui->btn_PrintScreen,&QPushButton::clicked,this,&Graphe::clickOnPrintscreen);
+
     mIsInit=true;
 
 }

@@ -8,12 +8,11 @@
 #include <QDebug>
 #include <QFile>
 #include <QTextStream>
-#include <QStatusBar>
 
 #include "graphe.h"
 
 
-#define version "MDM_Graphes 0.2"
+#define version "MDM Graphes 0.3"
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -23,7 +22,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     QSettings settings;
     QObject::connect(ui->actionQuitter,&QAction::triggered,this,&MainWindow::close);
-    QObject::connect(ui->actionApropos,&QAction::triggered,this,&MainWindow::aPropos);    
+    QObject::connect(ui->actionApropos,&QAction::triggered,this,&MainWindow::aPropos);
     QObject::connect(ui->actionFormat_CSV,&QAction::triggered,this,&MainWindow::clickOnFormatCSV);
     QObject::connect(ui->actionHowTo,&QAction::triggered,this,&MainWindow::clickOnHowTo);
     QObject::connect(ui->tb_Parcourir,&QToolButton::clicked,this,&MainWindow::clickOnParcourir);
@@ -39,6 +38,7 @@ MainWindow::MainWindow(QWidget *parent)
     mFilePath=settings.value("FilePath","").toString();
     if(!mFilePath.isEmpty())
         ui->le_File->setText(mFilePath);
+    ui->spEchantillonage->setValue(settings.value("Sampling",1).toInt());
 
     mEntetesModel=new QStringListModel();
     mYaxisModel=new QStringListModel();
@@ -90,6 +90,7 @@ void MainWindow::clickOnHowTo()
                           "en cliquant sur le bouton '-->'\n"
                           "On peut ajouter autant de série de données que l'on souhaite mais le traitement sera plus long"
                           "- Si on souhaite retirer une série de la liste à afficher, il suffit de la sélectionner puis de cliquer sur le bouton '<--'\n"
+                          "- Si on l'on souhaite n'utiliser qu'une ligne sur x, on peut choisir la valeur souhaitée dans Echantillonage\n"
                           "- Pour générer le graphe, il suffit de cliquer sur le bouton 'Graphe'.\n"
                           "Le temps de traitement peut être long suivant la taille du fichier et le nombre de séries sélectionnées.\n"
                           "On peut créer autant de graphes que l'on souhaite").arg(version);
@@ -116,47 +117,53 @@ void MainWindow::clickOnLoad()
 {
     QString fileName=ui->le_File->text();
 
-        if(QFile::exists(fileName))
+    if(QFile::exists(fileName))
+    {
+        QFile fichier(fileName);
+        if(fichier.open(QIODevice::ReadOnly))
         {
-            QFile fichier(fileName);
-            if(fichier.open(QIODevice::ReadOnly))
-            {
-                QTextStream flux(&fichier);
-                QString sFirst=flux.readLine();
-                int nChamps=sFirst.count(",");
+            QTextStream flux(&fichier);
+            QString sFirst=flux.readLine();
+            int nChamps=sFirst.count(",");
 
-                mEntetes.clear();
-                mYaxisList.clear();
-                ui->btn_Grf->setEnabled(false);
+            mEntetes.clear();
+            mYaxisList.clear();
+            ui->btn_Grf->setEnabled(false);
 
-                for(int i=0;i<=nChamps;i++)
-                    mEntetes.append(sFirst.section(",",i,i));
+            for(int i=0;i<=nChamps;i++)
+                mEntetes.append(sFirst.section(",",i,i));
 
 
-                mEntetesModel->setStringList(mEntetes);
-                mYaxisModel->setStringList(mYaxisList);
+            mEntetesModel->setStringList(mEntetes);
+            mYaxisModel->setStringList(mYaxisList);
 
 
-                mFilePath=fileName;
-                QSettings settings;
-                settings.setValue("FilePath",mFilePath);
-                fichier.close();
-
-            }
+            mFilePath=fileName;
+            QSettings settings;
+            settings.setValue("FilePath",mFilePath);
+            fichier.close();
 
         }
+
+    }
 
 
 }
 
 void MainWindow::clickOnAddY()
 {
-    QString selData=mEntetesModel->data(ui->lV_Entetes->currentIndex()).toString();
-    if(!selData.isEmpty())
+
+    QListIterator<QModelIndex>it(ui->lV_Entetes->selectionModel()->selectedIndexes());
+    QString selData;
+    while (it.hasNext())
     {
+        selData=mEntetesModel->data(it.next()).toString();
         if(mYaxisList.contains(selData)==false)
             mYaxisList.append(selData);
 
+    }
+    if(!mYaxisList.isEmpty())
+    {
         mYaxisModel->setStringList(mYaxisList);
         ui->btn_Grf->setEnabled(true);
     }
@@ -164,15 +171,19 @@ void MainWindow::clickOnAddY()
 
 void MainWindow::clickOnRmY()
 {
-    QString selData=mYaxisModel->data(ui->lv_Yaxis->currentIndex()).toString();
-    if(!selData.isEmpty())
+    QListIterator<QModelIndex>it(ui->lv_Yaxis->selectionModel()->selectedIndexes());
+    QString selData;
+    while (it.hasNext())
     {
-        mYaxisList.removeAll(selData);
-        mYaxisModel->setStringList(mYaxisList);
-        if(mYaxisList.isEmpty())
-            ui->btn_Grf->setEnabled(false);
+        selData=mYaxisModel->data(it.next()).toString();
+        if(mYaxisList.contains(selData)==true)
+            mYaxisList.removeAll(selData);
 
     }
+    mYaxisModel->setStringList(mYaxisList);
+    if(mYaxisList.isEmpty())
+        ui->btn_Grf->setEnabled(false);
+
 
 }
 
@@ -196,7 +207,9 @@ void MainWindow::clickOnYList()
 
 void MainWindow::clickOnGrf()
 {
-
+    int nSampling=ui->spEchantillonage->value();
+    QSettings settings;
+    settings.setValue("Sampling",nSampling);
     this->setCursor(Qt::WaitCursor);
     QList<QVector<double>> TabData;
     QVector<QDateTime> TabDate;
@@ -209,84 +222,94 @@ void MainWindow::clickOnGrf()
     double dMax=0;
     bool bValid=false;
 
-        if(QFile::exists(fileName))
+    if(QFile::exists(fileName))
+    {
+        QFile fichier(fileName);
+        if(fichier.open(QIODevice::ReadOnly))
         {
-            QFile fichier(fileName);
-            if(fichier.open(QIODevice::ReadOnly))
+
+            QTextStream flux(&fichier);
+
+            int n=0;
+            bool bFirst=true;
+            int i=nSampling;
+            int j=nSampling;
+            while(!flux.atEnd())
             {
-
-                QTextStream flux(&fichier);
-
-                int n=0;
-                 bool bFirst=true;
-                while(!flux.atEnd())                   
+                sUneLigne=flux.readLine();
+                if(n>0)
                 {
-                    sUneLigne=flux.readLine();
-                    if(n>0)
-                    {
                     //2023-11-16 05:04:01
-                    TabDate.append(QDateTime::fromString(sUneLigne.section(",",0,0),"yyyy-MM-dd hh:mm:ss"));
-
-                    QVector<double>listValues;
-                    QStringListIterator it(mYaxisList);
-                    int nCol=0;
-
-                    listSeries.clear();
-                    while(it.hasNext())
+                    if(i==nSampling)
                     {
-                        QString sCurrentCol=it.next();
-                        listSeries.append(sCurrentCol);
-                        nCol=mEntetes.indexOf(sCurrentCol);
-                        double dValue=sUneLigne.section(",",nCol,nCol).toDouble();
+                        i=0;
+                        TabDate.append(QDateTime::fromString(sUneLigne.section(",",0,0),"yyyy-MM-dd hh:mm:ss"));
+                    }
+                    i++;
 
-                        if(bFirst)
+                    if(j==nSampling)
+                    {
+                        j=0;
+                        QVector<double>listValues;
+                        QStringListIterator it(mYaxisList);
+                        int nCol=0;
+
+                        listSeries.clear();
+                        while(it.hasNext())
                         {
-                            dMin=dValue;
-                            dMax=dValue;
-                            bFirst=false;
-                        }
-                        else
-                        {
-                            if(dValue>dMax)
-                                dMax=dValue;
-                            if(dValue<dMin)
+                            QString sCurrentCol=it.next();
+                            listSeries.append(sCurrentCol);
+                            nCol=mEntetes.indexOf(sCurrentCol);
+                            double dValue=sUneLigne.section(",",nCol,nCol).toDouble();
+
+                            if(bFirst)
+                            {
                                 dMin=dValue;
+                                dMax=dValue;
+                                bFirst=false;
+                            }
+                            else
+                            {
+                                if(dValue>dMax)
+                                    dMax=dValue;
+                                if(dValue<dMin)
+                                    dMin=dValue;
 
+                            }
+
+                            listValues.append(dValue);
                         }
-
-                        listValues.append(dValue);
+                        bValid=true;
+                        TabData.append(listValues);
                     }
-                    bValid=true;
-                    TabData.append(listValues);
-
-                    }
-                    n++;
+                    j++;
                 }
-
-
-                fichier.close();
+                n++;
             }
 
 
-        }
-        if(bValid)
-        {
-
-            Graphe * grf=new Graphe;
-
-            grf->initGraphe(TabDate.first(),TabDate.last(),qRound(dMin)-1,qRound(dMax)+1,listSeries);
-            grf->setData(TabDate,TabData);
-
-            grf->show();
-            grf->replot();
-
-
-
+            fichier.close();
         }
 
 
+    }
+    if(bValid)
+    {
 
-        this->setCursor(Qt::ArrowCursor);
+        Graphe * grf=new Graphe;
+
+        grf->initGraphe(TabDate.first(),TabDate.last(),qRound(dMin)-1,qRound(dMax)+1,listSeries);
+        grf->setData(TabDate,TabData);
+
+        grf->show();
+        grf->replot();
+
+
+    }
+
+
+
+    this->setCursor(Qt::ArrowCursor);
 }
 
 
